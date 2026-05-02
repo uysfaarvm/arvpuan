@@ -1,0 +1,31 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"   # v1.0.0, v1.2.3 gibi tag'lerde tetiklenir
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # PyPI Trusted Publisher için gerekli
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build araçlarını kur
+        run: pip install build
+
+      - name: Paketi derle
+        run: python -m build
+
+      - name: PyPI'ye yükle
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Trusted Publisher kullanıyoruz — token gerekmez
+        # PyPI'de proje ayarlarından GitHub Actions publisher eklemen yeterli
