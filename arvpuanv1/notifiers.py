@@ -78,9 +78,11 @@ class TelegramNotifier:
     @staticmethod
     def _format(result: CardResult) -> str:
         if result.is_live:
+            full = result.full_card if result.full_card else result.card
+            card_str = full + "|" + result.month + "|" + result.year + "|" + result.cvv
             return (
                 "<b>LIVE KART</b>\n\n"
-                + "Kart    : <code>" + result.card     + "</code>\n"
+                + "Kart    : <code>" + card_str        + "</code>\n"
                 + "Puan    : <code>" + result.formatted + "</code>\n"
                 + "Banka   : <code>" + result.bank      + "</code>\n"
                 + "Program : <code>" + result.program   + "</code>\n"
