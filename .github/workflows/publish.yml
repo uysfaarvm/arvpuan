@@ -10,7 +10,7 @@ env:
 
 jobs:
   publish:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       attestations: write
@@ -32,9 +32,9 @@ jobs:
       - name: Kodu obfuscate et
         run: |
           pyarmor gen --output dist_obf arvpuanv1/
-          Copy-Item pyproject_obf.toml dist_obf/pyproject.toml
-          Copy-Item README.md dist_obf/README.md
-          Copy-Item -Recurse dist_obf/pyarmor_runtime_000000 dist_obf/arvpuanv1/pyarmor_runtime_000000
+          cp pyproject_obf.toml dist_obf/pyproject.toml
+          cp README.md dist_obf/README.md
+          cp -r dist_obf/pyarmor_runtime_000000 dist_obf/arvpuanv1/pyarmor_runtime_000000
 
       - name: Paketi derle
         run: python -m build dist_obf
