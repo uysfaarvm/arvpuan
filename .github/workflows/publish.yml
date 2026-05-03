@@ -10,7 +10,7 @@ env:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       id-token: write
       attestations: write
@@ -26,11 +26,20 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build araçlarını kur
-        run: pip install build
+      - name: Araclari kur
+        run: pip install build pyarmor
+
+      - name: Kodu obfuscate et
+        run: |
+          pyarmor gen --output dist_obf arvpuanv1/
+          Copy-Item pyproject_obf.toml dist_obf/pyproject.toml
+          Copy-Item README.md dist_obf/README.md
+          Copy-Item -Recurse dist_obf/pyarmor_runtime_000000 dist_obf/arvpuanv1/pyarmor_runtime_000000
 
       - name: Paketi derle
-        run: python -m build
+        run: python -m build dist_obf
 
-      - name: PyPI'ye yükle
+      - name: PyPI'ye yukle
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist_obf/dist/
