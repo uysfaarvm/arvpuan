@@ -311,7 +311,7 @@ def run(cards_file: Optional[str] = None) -> None:
         on_result=on_result,
         on_log=on_log,
         on_done=on_done,
-    ).run(cards)
+    ).run(cards, threaded=True).join()
 
 
 if __name__ == "__main__":
