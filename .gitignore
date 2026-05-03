@@ -3,9 +3,11 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+dist_obf/
+obf_src/
 .env
 *.txt.bak
 lives.txt
 all_results.txt
 cards.txt
-arvpuan/__pycache__/
+pyproject_obf.toml
