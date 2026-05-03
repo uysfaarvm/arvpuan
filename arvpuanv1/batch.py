@@ -187,7 +187,7 @@ class BatchChecker:
                 full = result.full_card if result.full_card else result.card
                 card_str = full + "|" + result.month + "|" + result.year + "|" + result.cvv
                 self._log(f"[LIVE] {card_str} | {result.formatted} | {result.bank}")
-            elif result.is_dead:
+            elif result.is_dead or CardChecker.is_dead_error(result.error):
                 self.dead_count += 1
                 self._log(f"[DEC]  {card_data}")
             else:

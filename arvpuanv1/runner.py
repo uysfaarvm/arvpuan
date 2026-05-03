@@ -184,7 +184,7 @@ def run(cards_file: Optional[str] = None) -> None:
             title="[bold red]DEC KARTLAR (son 15)[/bold red]",
             box=box.ROUNDED, header_style="bold red", border_style="red",
         )
-        t.add_column("KART", style="red", min_width=20)
+        t.add_column("KART", style="red", min_width=30, no_wrap=True)
         t.add_column("SAAT", style="dim", min_width=8)
         for row in dec_rows[-15:]:
             t.add_row(*row)
@@ -195,8 +195,8 @@ def run(cards_file: Optional[str] = None) -> None:
             title="[bold yellow]HATALAR (son 15)[/bold yellow]",
             box=box.ROUNDED, header_style="bold yellow", border_style="yellow",
         )
-        t.add_column("KART",  style="yellow", min_width=20)
-        t.add_column("HATA",  style="dim",    min_width=28)
+        t.add_column("KART",  style="yellow", min_width=30, no_wrap=True)
+        t.add_column("HATA",  style="dim",    min_width=30, no_wrap=True)
         t.add_column("SAAT",  style="dim",    min_width=8)
         for row in err_rows[-15:]:
             t.add_row(*row)
@@ -247,7 +247,7 @@ def run(cards_file: Optional[str] = None) -> None:
             if not _RICH:
                 print("[LIVE] " + card_str + " | " + r.formatted + " | " + r.bank)
 
-        elif r.is_dead:
+        elif r.is_dead or (r.error and r.error.strip().lower() == "not found"):
             stats["dead"] += 1
             dec_rows.append((r.card_data, zaman))
             if not _RICH:
