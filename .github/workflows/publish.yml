@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Build Release
 
 on:
   push:
@@ -9,12 +9,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
-      attestations: write
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -26,20 +24,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Araclari kur
-        run: pip install build pyarmor
-
-      - name: Kodu obfuscate et
+      - name: Build
         run: |
-          pyarmor gen --output dist_obf arvpuanv1/
-          cp pyproject_obf.toml dist_obf/pyproject.toml
-          cp README.md dist_obf/README.md
-          cp -r dist_obf/pyarmor_runtime_000000 dist_obf/arvpuanv1/pyarmor_runtime_000000
+          pip install build
+          python -m build
 
-      - name: Paketi derle
-        run: python -m build dist_obf
-
-      - name: PyPI'ye yukle
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Release olustur ve whl yukle
+        uses: softprops/action-gh-release@v2
         with:
-          packages-dir: dist_obf/dist/
+          files: dist/*.whl
