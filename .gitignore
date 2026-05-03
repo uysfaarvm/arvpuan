@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+*.txt.bak
+lives.txt
+all_results.txt
+cards.txt
+arvpuan/__pycache__/
