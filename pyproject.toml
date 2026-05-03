@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arvpuanv1"
-version = "1.0.0"
+version = "1.0.2"
 description = "Kart puan sorgulama kutuphanesi"
 readme = "README.md"
 license = { text = "MIT" }
@@ -38,4 +38,4 @@ Repository = "https://github.com/uysfaarvm/arvpuanv1"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["arvpuan*"]
+include = ["arvpuanv1*"]
