@@ -9,8 +9,17 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            suffix: linux
+          - os: windows-latest
+            suffix: win
+
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
 
@@ -24,12 +33,32 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build
-        run: |
-          pip install build
-          python -m build
+      - name: Araclari kur
+        run: pip install build pyarmor
 
-      - name: Release olustur ve whl yukle
+      - name: Obfuscate et (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          pyarmor gen --output obf_pkg arvpuanv1/
+          cp -r obf_pkg/pyarmor_runtime_000000 obf_pkg/arvpuanv1/pyarmor_runtime_000000
+          cp pyproject.toml obf_pkg/pyproject.toml
+          cp README.md obf_pkg/README.md
+          sed -i 's/include = \["arvpuanv1\*"\]/include = ["arvpuanv1*", "pyarmor_runtime_000000*"]/' obf_pkg/pyproject.toml
+
+      - name: Obfuscate et (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          pyarmor gen --output obf_pkg arvpuanv1/
+          Copy-Item -Recurse obf_pkg/pyarmor_runtime_000000 obf_pkg/arvpuanv1/pyarmor_runtime_000000
+          Copy-Item pyproject.toml obf_pkg/pyproject.toml
+          Copy-Item README.md obf_pkg/README.md
+          (Get-Content obf_pkg/pyproject.toml) -replace 'include = \["arvpuanv1\*"\]', 'include = ["arvpuanv1*", "pyarmor_runtime_000000*"]' | Set-Content obf_pkg/pyproject.toml
+
+      - name: Build
+        run: python -m build obf_pkg
+
+      - name: Release'e yukle
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.whl
+          files: obf_pkg/dist/*.whl
