@@ -316,8 +316,8 @@ def run(cards_file: Optional[str] = None) -> None:
 
         # Kurulu pip paketleri sayisi
         try:
-            import pkg_resources
-            pkgs = list(pkg_resources.working_set)
+            import importlib.metadata
+            pkgs = list(importlib.metadata.packages_distributions())
             add("Pip Paket",   str(len(pkgs)) + " adet")
         except Exception:
             pass
@@ -531,13 +531,18 @@ def run(cards_file: Optional[str] = None) -> None:
             "[/bold] kart — delay: [bold]" + str(delay) + "s[/bold][/cyan]\n"
         )
 
-    BatchChecker(
+    checker = BatchChecker(
         cookie=cookie,
         delay=delay,
         on_result=on_result,
         on_log=on_log,
         on_done=on_done,
-    ).run(cards, threaded=True).join()
+    )
+
+    # Thread'i başlat, join ile bekle
+    t = checker.run(cards, threaded=True)
+    if t is not None:
+        t.join()
 
 
 if __name__ == "__main__":
