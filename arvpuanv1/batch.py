@@ -189,14 +189,10 @@ class BatchChecker:
                 self._log(f"[LIVE] {card_str} | {result.formatted} | {result.bank}")
             elif result.is_dead:
                 self.dead_count += 1
-                self._log(f"[DEC]  {result.card}")
+                self._log(f"[DEC]  {card_data}")
             else:
-                if CardChecker.is_dead_error(result.error):
-                    self.dead_count += 1
-                    self._log(f"[DEC]  {result.card or card_data}")
-                else:
-                    self.error_count += 1
-                    self._log(f"[ERR]  {result.card or card_data} | {result.error}")
+                self.error_count += 1
+                self._log(f"[ERR]  {card_data} | {result.error}")
 
             self.on_result(result)
             i += 1

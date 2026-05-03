@@ -249,16 +249,15 @@ def run(cards_file: Optional[str] = None) -> None:
 
         elif r.is_dead:
             stats["dead"] += 1
-            dec_rows.append((r.card, zaman))
+            dec_rows.append((r.card_data, zaman))
             if not _RICH:
-                print("[DEC]  " + r.card)
+                print("[DEC]  " + r.card_data)
 
         else:
             stats["err"] += 1
-            kart = r.card or r.card_data[:20]
-            err_rows.append((kart, str(r.error or ""), zaman))
+            err_rows.append((r.card_data, str(r.error or ""), zaman))
             if not _RICH:
-                print("[ERR]  " + kart + " | " + str(r.error))
+                print("[ERR]  " + r.card_data + " | " + str(r.error))
 
         refresh()
         tg.send(r)
